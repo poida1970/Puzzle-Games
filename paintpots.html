@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Paint Pots</title>
+<style>
+:root{--bg:#f4efe8;--panel:#e6ddd0;--ink:#2a2622;--soft:#d6cbb9;--pot:#fffaf2;--potline:#9b8f7d;--accent:#e4572e;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#181614;--panel:#25211e;--ink:#efe8de;--soft:#3a342f;--pot:#2b2724;--potline:#7d7467;--accent:#ff7a50;color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+header{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--panel)}
+.grp{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:10px 14px;min-height:44px;background:var(--soft);color:var(--ink)}
+button.go{background:var(--ink);color:var(--bg)}
+button:disabled{opacity:.4}
+button:focus-visible,.pot:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+#lv{font-size:1.4rem;font-weight:800}
+#msg{font-weight:700;min-width:16ch;text-align:center}
+main{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:14px}
+#pots{display:flex;flex-wrap:wrap;justify-content:center;align-content:center;gap:var(--g)}
+.pot{width:var(--w);height:calc(var(--s)*4 + 14px);border:3px solid var(--potline);border-top-width:2px;border-radius:6px 6px calc(var(--w)*.4) calc(var(--w)*.4);background:var(--pot);display:flex;flex-direction:column-reverse;padding:4px;gap:2px;transition:transform .15s ease;cursor:pointer}
+.pot.sel{transform:translateY(-14px);border-color:var(--accent)}
+.pot.done{border-color:var(--ink)}
+.seg{height:var(--s);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:calc(var(--s)*.5);color:rgba(0,0,0,.55);line-height:1}
+@media (prefers-reduced-motion:reduce){.pot{transition:none}}
+#rt{font-weight:700;opacity:.75;font-size:.95rem}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+footer{padding:6px 14px 10px;font-size:.85rem;opacity:.75;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="grp"><div id="lv">Level 1</div><div id="rt">Retries: 0</div></div>
+  <div id="msg" aria-live="polite">Sort the paint</div>
+  <div class="grp">
+    <button id="un">Undo</button><button id="rs">Restart</button><button id="ex">+ Pot</button><button id="nx" class="go" hidden>Next level</button>
+  </div>
+</header>
+<main><div id="pots"></div></main>
+<footer>Tap a pot, then tap where to pour. Paint only goes onto the same colour or an empty pot. No timer, no way to lose.</footer>
+<canvas id="fx" aria-hidden="true"></canvas>
+<script>
+const $=id=>document.getElementById(id);
+const COL=['#e4572e','#f2a900','#3fa34d','#1f8fd1','#7a52c7','#e0559a','#14b5a5','#a4c639','#8d99a0'];
+const SYM=['●','■','▲','◆','★','♥','✚','⬢','☾'];
+const CAP=4;
+let lvl=1,pots,start,hist,sel=-1,won,extra,retries=0;
+try{const s=+localStorage.getItem('pp-lvl');if(s>0)lvl=s}catch(e){}
+const rnd=k=>Math.floor(Math.random()*k);
+const mono=p=>p.length===CAP&&p.every(c=>c===p[0]);
+
+function deal(){
+  const nc=Math.min(3+((lvl-1)>>1),COL.length);
+  let p;
+  do{
+    const d=[];for(let c=0;c<nc;c++)for(let i=0;i<CAP;i++)d.push(c);
+    for(let i=d.length-1;i>0;i--){const j=rnd(i+1);[d[i],d[j]]=[d[j],d[i]]}
+    p=[];for(let c=0;c<nc;c++)p.push(d.slice(c*CAP,c*CAP+CAP));
+  }while(p.some(mono));
+  p.push([],[]);return p;
+}
+let fxRaf=0,parts=[];
+function stopFx(){cancelAnimationFrame(fxRaf);fxRaf=0;parts=[];const c=$('fx');c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function burst(cx,cy){for(let i=0;i<60;i++){const a=Math.random()*6.283,v=2+Math.random()*5;
+  parts.push({x:cx,y:cy,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:1,c:COL[rnd(COL.length)]})}}
+function fireworks(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const c=$('fx'),x=c.getContext('2d'),dpr=window.devicePixelRatio||1,W=innerWidth,H=innerHeight;
+  c.width=W*dpr;c.height=H*dpr;x.scale(dpr,dpr);
+  let t=0,next=0;
+  (function frame(){
+    x.clearRect(0,0,W,H);
+    if(t<150&&t>=next){burst(W*(.15+Math.random()*.7),H*(.15+Math.random()*.4));next=t+18+rnd(14)}
+    parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.06;p.vx*=.985;p.l-=.011;x.globalAlpha=Math.max(p.l,0);x.fillStyle=p.c;x.beginPath();x.arc(p.x,p.y,2.6,0,6.283);x.fill()});
+    parts=parts.filter(p=>p.l>0);t++;
+    if(t<150||parts.length)fxRaf=requestAnimationFrame(frame);else x.clearRect(0,0,W,H);
+  })();
+}
+function init(fresh=true){
+  if(fresh)start=deal();
+  pots=start.map(p=>p.slice());hist=[];sel=-1;won=false;extra=false;
+  if(fresh)retries=0;stopFx();$('rt').textContent='Retries: '+retries;
+  $('lv').textContent='Level '+lvl;$('msg').textContent='Sort the paint';$('nx').hidden=true;
+  build();
+}
+function build(){
+  const box=$('pots');box.innerHTML='';
+  pots.forEach((_,i)=>{const d=document.createElement('div');d.className='pot';d.tabIndex=0;d.setAttribute('role','button');d.dataset.i=i;
+    d.setAttribute('aria-label','Pot '+(i+1));box.appendChild(d)});
+  size();draw();
+}
+function size(){
+  const m=document.querySelector('main'),W=m.clientWidth-28,H=m.clientHeight-28,n=pots.length,g=14;
+  let best=30;
+  for(let rows=1;rows<=3;rows++){
+    const cols=Math.ceil(n/rows);
+    const w=Math.min(84,Math.floor((W-g*(cols-1))/cols));
+    const s=Math.floor((w-14)*.95),need=rows*(s*4+14+14)+(rows-1)*g;
+    if(need<=H&&w>best){best=w}
+  }
+  const w=Math.max(34,best),s=Math.floor((w-14)*.95),r=document.documentElement.style;
+  r.setProperty('--w',w+'px');r.setProperty('--s',s+'px');r.setProperty('--g',g+'px');
+}
+function draw(){
+  [...$('pots').children].forEach((d,i)=>{
+    d.className='pot'+(i===sel?' sel':'')+(mono(pots[i])?' done':'');
+    d.innerHTML=pots[i].map(c=>`<div class="seg" style="background:${COL[c]}">${SYM[c]}</div>`).join('');
+  });
+  $('un').disabled=!hist.length||won;$('ex').disabled=extra||won;
+}
+function run(p){let k=1;while(k<p.length&&p[p.length-1-k]===p[p.length-1])k++;return k}
+function pour(a,b){
+  const A=pots[a],B=pots[b];if(!A.length||B.length>=CAP)return false;
+  const c=A[A.length-1];if(B.length&&B[B.length-1]!==c)return false;
+  const n=Math.min(run(A),CAP-B.length);
+  hist.push(pots.map(p=>p.slice()));
+  for(let i=0;i<n;i++)B.push(A.pop());return true;
+}
+function check(){
+  if(pots.every(p=>!p.length||mono(p))){
+    won=true;$('msg').textContent='Lovely, all sorted!'+(retries?' ('+retries+(retries===1?' retry':' retries')+')':'');fireworks();$('nx').hidden=false;$('nx').focus();
+    try{localStorage.setItem('pp-lvl',lvl+1)}catch(e){}
+  }
+}
+$('pots').addEventListener('click',e=>{
+  const t=e.target.closest('.pot');if(!t||won)return;const i=+t.dataset.i;
+  if(sel<0){if(pots[i].length){sel=i;$('msg').textContent='Pour where?'}}
+  else if(sel===i){sel=-1;$('msg').textContent='Sort the paint'}
+  else{
+    if(pour(sel,i)){sel=-1;$('msg').textContent='Sort the paint';draw();check();return}
+    if(pots[i].length){sel=i}else{sel=-1}
+    $('msg').textContent=sel<0?'Sort the paint':'Pour where?';
+  }
+  draw();
+});
+$('pots').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.target.click()}});
+$('un').onclick=()=>{if(won||!hist.length)return;pots=hist.pop();sel=-1;draw()};
+$('rs').onclick=()=>{if(won)return;if(hist.length)retries++;init(false)};
+$('ex').onclick=()=>{if(extra||won)return;extra=true;pots.push([]);hist.forEach(h=>h.push([]));build()};
+$('nx').onclick=()=>{lvl++;init(true)};
+addEventListener('resize',size);
+init(true);
+</script>
+</body>
+</html>

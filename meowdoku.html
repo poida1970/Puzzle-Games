@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Meowdoku</title>
+<style>
+:root{--bg:#fbf3ee;--panel:#f1e3da;--ink:#3a2a2f;--line:#3a2a2f;--btn:#3a2a2f;--btnink:#fbf3ee;--soft:#e4d2c7;--accent:#d6455d;
+--r0:hsl(350 70% 84%);--r1:hsl(28 85% 80%);--r2:hsl(50 80% 78%);--r3:hsl(110 50% 78%);--r4:hsl(165 50% 76%);--r5:hsl(200 70% 80%);--r6:hsl(235 65% 85%);--r7:hsl(275 55% 83%);--r8:hsl(315 55% 82%);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1d1519;--panel:#2b1f25;--ink:#f3e4e6;--line:#f3e4e6;--btn:#f3e4e6;--btnink:#1d1519;--soft:#43323a;--accent:#ff7189;
+--r0:hsl(350 40% 34%);--r1:hsl(28 45% 32%);--r2:hsl(50 40% 30%);--r3:hsl(110 30% 28%);--r4:hsl(165 35% 27%);--r5:hsl(200 40% 32%);--r6:hsl(235 35% 36%);--r7:hsl(275 30% 35%);--r8:hsl(315 30% 33%);color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+header{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--panel)}
+.grp{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:10px 14px;min-height:44px;background:var(--soft);color:var(--ink)}
+button.on{background:var(--btn);color:var(--btnink)}
+button:disabled{opacity:.4}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.stat{font-variant-numeric:tabular-nums;font-size:1.4rem;font-weight:800;min-width:3ch;text-align:center}
+#hearts{color:var(--accent);letter-spacing:2px}
+#msg{font-weight:700;min-width:12ch;text-align:center}
+main{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto}
+#board{display:grid;border:3px solid var(--line);border-radius:6px;touch-action:manipulation;background:var(--bg)}
+.c{width:var(--c);height:var(--c);display:flex;align-items:center;justify-content:center;font-size:calc(var(--c)*.58);line-height:1;color:var(--ink);border:1px solid color-mix(in srgb,var(--line) 18%,transparent)}
+.c.mk{font-size:calc(var(--c)*.4);opacity:.55}
+.c.au{font-size:calc(var(--c)*.3);opacity:.3}
+.c.bad{animation:sh .35s}
+@keyframes sh{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@media (prefers-reduced-motion:reduce){.c.bad{animation:none;outline:3px solid var(--accent)}}
+#rt{font-weight:700;min-width:9ch;text-align:center}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+footer{padding:6px 14px 10px;font-size:.85rem;opacity:.75;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="grp" id="sz" role="group" aria-label="Grid size"></div>
+  <div class="grp">
+    <div class="stat" id="hearts" aria-label="Hearts"></div>
+    <div id="msg" aria-live="polite">Find the cats</div>
+    <div id="rt">Retries: 0</div>
+  </div>
+  <div class="grp">
+    
+    <button id="un">Undo</button><button id="rs">Retry</button>
+    <button id="ng">New puzzle</button>
+  </div>
+</header>
+<main><div id="board"></div></main>
+<footer>Tap to mark a cell, press and hold to place a cat. One cat in every row, column and colour, and cats never touch, not even diagonally.</footer>
+<canvas id="fx" aria-hidden="true"></canvas>
+<script>
+const $=id=>document.getElementById(id);
+let n=6,reg,sol,cat,mk,hist,hearts,over,won,retries=0,heartsOn=true;
+try{const s=+localStorage.getItem('md-n');if(s>=5&&s<=9)n=s}catch(e){}
+const rnd=k=>Math.floor(Math.random()*k);
+const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]]}return a};
+
+function genCats(){
+  const s=[],used=new Set();
+  (function go(r){
+    if(r===n)return true;
+    for(const c of shuffle([...Array(n).keys()])){
+      if(used.has(c)||(r&&Math.abs(c-s[r-1])<2))continue;
+      s[r]=c;used.add(c);if(go(r+1))return true;used.delete(c);
+    }return false;
+  })(0);
+  return s;
+}
+function genReg(s){
+  const g=Array(n*n).fill(-1);s.forEach((c,r)=>g[r*n+c]=r);
+  let left=n*n-n;
+  while(left){
+    const opts=[];
+    for(let i=0;i<n*n;i++){if(g[i]<0)continue;const r=(i/n)|0,c=i%n;
+      for(const[dr,dc]of[[1,0],[-1,0],[0,1],[0,-1]]){const y=r+dr,x=c+dc;
+        if(y>=0&&y<n&&x>=0&&x<n&&g[y*n+x]<0)opts.push([y*n+x,g[i]])}}
+    const[j,k]=opts[rnd(opts.length)];g[j]=k;left--;
+  }
+  return g;
+}
+function count(g){
+  let found=0;const cols=new Set(),regs=new Set();
+  (function go(r,prev){
+    if(found>1)return;if(r===n){found++;return}
+    for(let c=0;c<n;c++){
+      if(cols.has(c)||(r&&Math.abs(c-prev)<2))continue;
+      const k=g[r*n+c];if(regs.has(k))continue;
+      cols.add(c);regs.add(k);go(r+1,c);cols.delete(c);regs.delete(k);
+    }
+  })(0,-9);
+  return found;
+}
+function make(){
+  const end=Date.now()+1800;let s,g;
+  do{s=genCats();g=genReg(s)}while(count(g)!==1&&Date.now()<end);
+  sol=s;reg=g;
+}
+const FXC=['#e4572e','#f2a900','#3fa34d','#1f8fd1','#7a52c7','#e0559a','#14b5a5'];
+let fxRaf=0,parts=[];
+function stopFx(){cancelAnimationFrame(fxRaf);fxRaf=0;parts=[];const c=$('fx');c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function burst(cx,cy){for(let i=0;i<60;i++){const a=Math.random()*6.283,v=2+Math.random()*5;
+  parts.push({x:cx,y:cy,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:1,c:FXC[rnd(FXC.length)]})}}
+function fireworks(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const c=$('fx'),x=c.getContext('2d'),dpr=window.devicePixelRatio||1,W=innerWidth,H=innerHeight;
+  c.width=W*dpr;c.height=H*dpr;x.scale(dpr,dpr);
+  let t=0,next=0;
+  (function frame(){
+    x.clearRect(0,0,W,H);
+    if(t<150&&t>=next){burst(W*(.15+Math.random()*.7),H*(.15+Math.random()*.4));next=t+18+rnd(14)}
+    parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.06;p.vx*=.985;p.l-=.011;x.globalAlpha=Math.max(p.l,0);x.fillStyle=p.c;x.beginPath();x.arc(p.x,p.y,2.6,0,6.283);x.fill()});
+    parts=parts.filter(p=>p.l>0);t++;
+    if(t<150||parts.length)fxRaf=requestAnimationFrame(frame);else x.clearRect(0,0,W,H);
+  })();
+}
+function init(){
+  make();retries=0;
+  cat=Array(n*n).fill(0);mk=Array(n*n).fill(0);hist=[];hearts=3;over=won=false;stopFx();$('rt').textContent='Retries: 0';
+  document.querySelectorAll('#sz button').forEach(b=>b.classList.toggle('on',+b.dataset.n===n));
+  $('msg').textContent='Find the cats';
+  
+  build();size();draw();
+}
+function build(){
+  const b=$('board');b.style.gridTemplateColumns=`repeat(${n},var(--c))`;b.innerHTML='';
+  for(let i=0;i<n*n;i++){
+    const d=document.createElement('div'),r=(i/n)|0,c=i%n,k=reg[i];d.className='c';d.dataset.i=i;
+    d.style.background=`var(--r${k})`;
+    const side=(y,x,p)=>{const o=y<0||y>=n||x<0||x>=n||reg[y*n+x]!==k;if(o)d.style[p]='3px solid var(--line)'};
+    side(r-1,c,'borderTop');side(r+1,c,'borderBottom');side(r,c-1,'borderLeft');side(r,c+1,'borderRight');
+    b.appendChild(d);
+  }
+}
+function size(){
+  const m=document.querySelector('main'),w=m.clientWidth-30,h=m.clientHeight-30;
+  document.documentElement.style.setProperty('--c',Math.max(28,Math.min(80,Math.floor(Math.min(w,h)/n)))+'px');
+}
+function draw(){
+  const cells=$('board').children;
+  for(let i=0;i<n*n;i++){
+    const e=cells[i];let cls='c',t='';
+    if(cat[i]){t='🐱'}
+    else if(over&&!won&&sol[(i/n)|0]===i%n){t='😿'}
+    else if(mk[i]===1){cls+=' mk';t='×'}
+    else if(mk[i]===2){cls+=' au';t='•'}
+    if(e.className!==cls)e.className=cls;if(e.textContent!==t)e.textContent=t;
+  }
+  $('hearts').textContent=heartsOn?'♥'.repeat(hearts)+'♡'.repeat(3-hearts):'';
+  
+  $('un').disabled=!hist.length||over;
+}
+const snap=()=>hist.push({cat:cat.slice(),mk:mk.slice()});
+function autoMark(i){
+  const r=(i/n)|0,c=i%n,k=reg[i];
+  for(let j=0;j<n*n;j++){
+    if(cat[j]||mk[j])continue;const y=(j/n)|0,x=j%n;
+    if(y===r||x===c||reg[j]===k||(Math.abs(y-r)<2&&Math.abs(x-c)<2))mk[j]=2;
+  }
+}
+function placeCat(i){
+  const r=(i/n)|0;
+  snap();
+  if(sol[r]===i%n){
+    cat[i]=1;mk[i]=0;
+    if(cat.reduce((a,b)=>a+b,0)===n){won=true;over=true;
+      $('msg').textContent='Solved!'+(retries?' ('+retries+(retries===1?' retry':' retries')+')':'');fireworks()}
+  }else{
+    mk[i]=1;
+    if(heartsOn){hearts--;if(!hearts){over=true;$('msg').textContent='Out of hearts, tap Retry'}else $('msg').textContent='Not a cat spot'}
+    else $('msg').textContent='Not a cat spot';
+    draw();const e=$('board').children[i];e.classList.add('bad');setTimeout(()=>e.classList.remove('bad'),400);return;
+  }
+  draw();
+}
+function saveBest(t){try{const b=JSON.parse(localStorage.getItem('md-best')||'{}');
+  if(!b[n]||t<b[n]){b[n]=t;localStorage.setItem('md-best',JSON.stringify(b));$('msg').textContent+=' (best!)'}}catch(e){}}
+let hold=null,fired=false,pid=null;
+const bd=$('board'),stop=()=>clearTimeout(hold);
+bd.addEventListener('pointerdown',e=>{
+  const t=e.target.closest('.c');if(!t||over)return;
+  pid=+t.dataset.i;fired=false;
+  hold=setTimeout(()=>{fired=true;if(!over&&!cat[pid]){if(navigator.vibrate)navigator.vibrate(15);placeCat(pid)}},400);
+});
+bd.addEventListener('pointerup',e=>{
+  stop();const t=e.target.closest('.c');
+  if(pid!==null&&!fired&&!over&&t&&+t.dataset.i===pid&&!cat[pid]){snap();mk[pid]=mk[pid]===1?0:1;draw()}
+  pid=null;
+});
+bd.addEventListener('pointercancel',()=>{stop();pid=null});
+bd.addEventListener('pointerleave',()=>{stop();pid=null});
+bd.addEventListener('contextmenu',e=>e.preventDefault());
+
+$('un').onclick=()=>{if(over||!hist.length)return;const s=hist.pop();cat=s.cat;mk=s.mk;draw()};
+$('rs').onclick=()=>{if(won)return;if(hist.length)retries++;cat=Array(n*n).fill(0);mk=Array(n*n).fill(0);hist=[];hearts=3;over=false;$('msg').textContent='Find the cats';$('rt').textContent='Retries: '+retries;stopFx();draw()};
+$('ng').onclick=init;
+for(let k=5;k<=9;k++){const b=document.createElement('button');b.textContent=k+'×'+k;b.dataset.n=k;
+  b.onclick=()=>{n=k;try{localStorage.setItem('md-n',k)}catch(e){}init()};$('sz').appendChild(b)}
+addEventListener('resize',size);
+init();
+</script>
+</body>
+</html>
