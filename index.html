@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Our Games</title>
+<style>
+:root{--bg:#f4efe8;--card:#fffaf2;--ink:#2a2622;--line:#d6cbb9;--accent:#e4572e;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#181614;--card:#25211e;--ink:#efe8de;--line:#3a342f;--accent:#ff7a50;color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",Roboto,sans-serif;
+padding:calc(24px + env(safe-area-inset-top,0px)) 18px calc(24px + env(safe-area-inset-bottom,0px))}
+main{max-width:760px;margin:0 auto}
+h1{font-size:2rem;margin:0 0 6px}
+p.sub{margin:0 0 22px;opacity:.75}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+a.card{display:flex;gap:14px;align-items:center;padding:18px;background:var(--card);border:2px solid var(--line);border-radius:16px;color:inherit;text-decoration:none;min-height:96px}
+a.card:hover,a.card:focus-visible{border-color:var(--accent);outline:none}
+.ic{font-size:2.4rem;line-height:1}
+.t{font-weight:800;font-size:1.2rem}
+.d{font-size:.9rem;opacity:.75;margin-top:2px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Our Games</h1>
+  <p class="sub">Tap a game to play.</p>
+  <div class="grid">
+    <a class="card" href="paintpots.html"><span class="ic">🎨</span><span><div class="t">Paint Pots</div><div class="d">Sort the paint into matching pots. Relaxing, no way to lose.</div></span></a>
+    <a class="card" href="meowdoku.html"><span class="ic">🐱</span><span><div class="t">Meowdoku</div><div class="d">Find the hidden cats using logic.</div></span></a>
+    <a class="card" href="minesweeper.html"><span class="ic">💣</span><span><div class="t">Minesweeper</div><div class="d">Clear the board without hitting a mine.</div></span></a>
+  </div>
+</main>
+</body>
+</html>
