@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Make the Target</title>
+<style>
+:root{--bg:#eaf1f6;--panel:#d5e2eb;--ink:#17252f;--soft:#c3d4e0;--card:#fff;--line:#9db4c4;--accent:#e4572e;--gold:#f2b705;--navy:#1c3a52;--navyink:#fff6d6;--btn:#17252f;--btnink:#eaf1f6;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101820;--panel:#1a2631;--ink:#e6eef4;--soft:#2c3b49;--card:#1a2631;--line:#4a6073;--accent:#ff7a50;--navy:#0a1118;--navyink:#ffd54a;--btn:#e6eef4;--btnink:#101820;color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;height:100dvh;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+button{font:inherit;color:var(--ink);border:0;cursor:pointer;touch-action:manipulation}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+header{display:flex;gap:10px;align-items:center;padding:8px 12px;background:var(--panel);flex:none}
+#lv{font-size:1.1rem;font-weight:800}
+#rt{font-size:.9rem;font-weight:700;opacity:.75}
+.sp{flex:1}
+.btn{font-weight:700;border-radius:12px;padding:8px 14px;min-height:46px;background:var(--soft);font-size:1rem}
+.btn.go{background:var(--btn);color:var(--btnink)}
+#msg{flex:none;min-height:2.6em;padding:4px 12px;font-size:.95rem;font-weight:700;text-align:center;display:flex;align-items:center;justify-content:center}
+main{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:8px;padding:4px 12px 12px;width:100%;max-width:560px;margin:0 auto}
+#target{flex:none;background:var(--navy);color:var(--navyink);border-radius:18px;text-align:center;padding:8px 0 10px}
+#target .lab{font-size:.75rem;text-transform:uppercase;letter-spacing:.12em;opacity:.8}
+#target .tn{font-size:clamp(2.4rem,9vh,3.6rem);font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+#tiles{display:grid;gap:10px;flex:none}
+.tile{height:clamp(62px,12vh,92px);border-radius:16px;background:var(--card);border:3px solid var(--line);font-size:clamp(1.5rem,5.5vh,2.2rem);font-weight:800;font-variant-numeric:tabular-nums}
+.tile.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,var(--card))}
+.tile.hint,.op.hint{outline:4px solid var(--gold);outline-offset:2px}
+.tile.new{animation:pop .4s}
+@keyframes pop{0%{transform:scale(.6)}60%{transform:scale(1.1)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.tile.new{animation:none}}
+#ops{display:flex;gap:10px;justify-content:center;flex:none}
+.op{flex:1;max-width:120px;height:clamp(52px,9vh,68px);border-radius:16px;background:var(--navy);color:var(--navyink);font-size:2rem;font-weight:800}
+.op.sel{background:var(--accent);color:#fff}
+#log{flex:none;min-height:4.4em;font-size:.85rem;opacity:.8;text-align:center;line-height:1.35;font-variant-numeric:tabular-nums}
+#acts{display:flex;gap:10px;flex:none}
+#acts .btn{flex:1}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+@media (max-height:560px){#log{display:none}#msg{min-height:1.6em}}
+</style>
+</head>
+<body>
+<header><div id="lv">Level 1</div><div id="rt">Retries: 0</div><div class="sp"></div><button class="btn go" id="nx" hidden>Next level</button></header>
+<div id="msg" aria-live="polite"></div>
+<main>
+  <div id="target"></div>
+  <div id="tiles"></div>
+  <div id="ops"></div>
+  <div id="log"></div>
+  <div id="acts"><button class="btn" id="un">Undo</button><button class="btn" id="hn">Hint</button><button class="btn" id="rs">Retry</button></div>
+</main>
+<canvas id="fx" aria-hidden="true"></canvas>
+<script>
+const $=id=>document.getElementById(id);
+const rnd=k=>Math.floor(Math.random()*k);
+const pick=a=>a[rnd(a.length)];
+let lvl=1,retries=0,OPS,T,start,nums,log,hist,s1,op,hint,newIdx,won;
+try{const s=+localStorage.getItem('maths-level');if(s>0)lvl=s}catch(e){}
+
+function calc(x,y,o){
+  if(o==='+')return x+y;
+  if(o==='×')return x*y;
+  const hi=Math.max(x,y),lo=Math.min(x,y);
+  if(o==='−')return hi>lo?hi-lo:null;
+  return lo>1&&hi%lo===0?hi/lo:null;
+}
+function gen(){
+  const n=Math.min(6,3+Math.floor((lvl-1)/3));
+  OPS=lvl<3?['+','−']:lvl<5?['+','−','×']:['+','−','×','÷'];
+  const big=[25,50,75,100],lo=lvl<3?6:10,hi=lvl<3?40:999;
+  for(let a=0;a<400;a++){
+    const ns=Array.from({length:n},()=>lvl>=6&&Math.random()<.3?pick(big):1+rnd(10));
+    let cur=ns.slice(),guard=0;
+    while(cur.length>1&&guard++<40){
+      const i=rnd(cur.length);let j=rnd(cur.length-1);if(j>=i)j++;
+      const r=calc(cur[i],cur[j],pick(OPS));
+      if(r==null||r>5000)continue;
+      cur=cur.filter((_,x)=>x!==i&&x!==j);cur.push(r);
+    }
+    if(cur.length===1&&cur[0]>=lo&&cur[0]<=hi&&!ns.includes(cur[0])){start=ns;T=cur[0];return}
+  }
+  start=[2,3,4];T=9;
+}
+function solve(a){
+  const seen=new Set();
+  (function(){})();
+  function go(a){
+    if(a.includes(T))return[];
+    if(a.length<2)return null;
+    const k=a.slice().sort((x,y)=>x-y).join(',');
+    if(seen.has(k))return null;seen.add(k);
+    for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++)for(const o of OPS){
+      const r=calc(a[i],a[j],o);if(r==null||r>5000)continue;
+      const nb=a.filter((_,x)=>x!==i&&x!==j);nb.push(r);
+      const s=go(nb);if(s)return[{i,j,o,x:a[i],y:a[j]},...s];
+    }
+    return null;
+  }
+  return go(a);
+}
+function render(){
+  $('target').innerHTML=`<div class="lab">Make</div><div class="tn">${T}</div>`;
+  const t=$('tiles'),c=nums.length<=3?nums.length:nums.length===4?2:3;
+  t.style.gridTemplateColumns=`repeat(${c},minmax(0,1fr))`;
+  t.innerHTML=nums.map((v,i)=>`<button class="tile${s1===i?' sel':''}${hint&&(hint.i===i||hint.j===i)?' hint':''}${newIdx===i?' new':''}" data-t="${i}">${v}</button>`).join('');
+  $('ops').innerHTML=OPS.map(o=>`<button class="op${op===o?' sel':''}${hint&&hint.o===o?' hint':''}" data-op="${o}" aria-label="${{'+':'plus','−':'minus','×':'times','÷':'divide'}[o]}">${o}</button>`).join('');
+  $('log').innerHTML=log.slice(-3).join('<br>');
+}
+const say=t=>$('msg').textContent=t;
+function begin(){
+  stopFx();gen();won=false;reset(true);
+  $('lv').textContent='Level '+lvl;$('rt').textContent='Retries: '+retries;
+  $('nx').hidden=true;$('acts').hidden=false;
+}
+function reset(first){
+  nums=start.slice();log=[];hist=[];s1=op=hint=null;newIdx=null;
+  say(first&&lvl===1?'Tap a number, an operation, then another number':'Make '+T+' from these numbers');render();
+}
+function tapTile(k){
+  if(won)return;hint=null;
+  if(s1===null||op===null){s1=s1===k?null:k;render();return}
+  if(k===s1){s1=null;render();return}
+  const x=nums[s1],y=nums[k],r=calc(x,y,op);
+  if(r==null){say(op==='−'?'Those are equal, the answer would be zero':'That does not divide evenly');render();return}
+  hist.push({nums:nums.slice(),log:log.slice()});
+  const hi=Math.max(x,y),lo=Math.min(x,y),txt=op==='−'||op==='÷'?`${hi} ${op} ${lo} = ${r}`:`${x} ${op} ${y} = ${r}`;
+  log.push(txt);nums=nums.filter((_,i)=>i!==s1&&i!==k);nums.push(r);newIdx=nums.length-1;s1=op=null;
+  if(r===T){win();return}
+  say(solve(nums)?txt:'No way to the target from here. Try Undo.');render();
+}
+function win(){
+  won=true;render();say('You made '+T+'!'+(retries?' ('+retries+(retries===1?' retry':' retries')+')':''));
+  $('nx').hidden=false;$('acts').hidden=true;
+  try{localStorage.setItem('maths-level',lvl+1)}catch(e){}
+  fireworks();
+}
+$('tiles').addEventListener('click',e=>{const b=e.target.closest('[data-t]');if(b)tapTile(+b.dataset.t)});
+$('ops').addEventListener('click',e=>{
+  const b=e.target.closest('[data-op]');if(!b||won)return;
+  hint=null;if(s1===null){say('Pick a number first');render();return}
+  op=op===b.dataset.op?null:b.dataset.op;render();
+});
+$('un').onclick=()=>{if(won||!hist.length)return;const h=hist.pop();nums=h.nums;log=h.log;s1=op=hint=null;newIdx=null;say('Make '+T+' from these numbers');render()};
+$('hn').onclick=()=>{
+  if(won)return;const s=solve(nums);
+  if(!s||!s.length){say('No way to the target from here. Try Undo or Retry.');return}
+  hint=s[0];s1=op=null;say(`Try ${hint.x} ${hint.o} ${hint.y}`);render();
+};
+$('rs').onclick=()=>{if(won)return;if(hist.length)retries++;$('rt').textContent='Retries: '+retries;reset(false)};
+$('nx').onclick=()=>{lvl++;retries=0;begin()};
+
+const FXC=['#e4572e','#f2a900','#3fa34d','#1f8fd1','#7a52c7','#e0559a','#14b5a5'];
+let fxRaf=0,parts=[];
+function stopFx(){cancelAnimationFrame(fxRaf);fxRaf=0;parts=[];const c=$('fx');c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function burst(cx,cy){for(let i=0;i<60;i++){const a=Math.random()*6.283,v=2+Math.random()*5;
+  parts.push({x:cx,y:cy,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:1,c:FXC[rnd(FXC.length)]})}}
+function fireworks(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const c=$('fx'),x=c.getContext('2d'),dpr=window.devicePixelRatio||1,W=innerWidth,H=innerHeight;
+  c.width=W*dpr;c.height=H*dpr;x.scale(dpr,dpr);
+  let t=0,next=0;
+  (function frame(){
+    x.clearRect(0,0,W,H);
+    if(t<150&&t>=next){burst(W*(.15+Math.random()*.7),H*(.15+Math.random()*.4));next=t+18+rnd(14)}
+    parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.06;p.vx*=.985;p.l-=.011;x.globalAlpha=Math.max(p.l,0);x.fillStyle=p.c;x.beginPath();x.arc(p.x,p.y,2.6,0,6.283);x.fill()});
+    parts=parts.filter(p=>p.l>0);t++;
+    if(t<150||parts.length)fxRaf=requestAnimationFrame(frame);else x.clearRect(0,0,W,H);
+  })();
+}
+begin();
+</script>
+</body>
+</html>
