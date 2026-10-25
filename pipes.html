@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pipe Garden</title>
+<style>
+:root{--bg:#f4efe8;--panel:#e6ddd0;--ink:#2a2622;--soft:#d6cbb9;--tile:#fffaf2;--line:#d6cbb9;--pipe:#9a8f80;--edge:#5d5448;--water:#1f8fd1;--rock:#b9ae9c;--accent:#e4572e;--btn:#2a2622;--btnink:#f4efe8;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#181614;--panel:#25211e;--ink:#efe8de;--soft:#3a342f;--tile:#25211e;--line:#3a342f;--pipe:#7b7266;--edge:#12100e;--water:#4db3f0;--rock:#4a443d;--accent:#ff7a50;--btn:#efe8de;--btnink:#181614;color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+header{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--panel)}
+.grp{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:10px 16px;min-height:44px;background:var(--soft);color:var(--ink)}
+button.go{background:var(--btn);color:var(--btnink)}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#lv{font-size:1.4rem;font-weight:800}
+#rt{font-weight:700;opacity:.75;font-size:.95rem}
+#msg{font-weight:700;min-width:16ch;text-align:center}
+main{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto}
+#board{display:grid;touch-action:manipulation}
+.mk{width:var(--c);height:var(--c);display:flex;align-items:center;justify-content:center;font-size:calc(var(--c)*.55)}
+.t{width:var(--c);height:var(--c);border:1px solid var(--line);background:var(--tile);overflow:hidden;cursor:pointer}
+.t svg{display:block;width:100%;height:100%;transition:transform .18s ease}
+.o line{stroke:var(--edge);stroke-width:34}
+.p line{stroke:var(--pipe);stroke-width:22}
+.oq{fill:var(--edge)}.q{fill:var(--pipe)}
+.t.w .p line{stroke:var(--water)}.t.w .q{fill:var(--water)}
+.rock{background:var(--rock);cursor:default}
+.rock::after{content:"";display:block;margin:22%;height:56%;border-radius:40% 55% 45% 50%;background:color-mix(in srgb,var(--rock) 65%,#000)}
+@media (prefers-reduced-motion:reduce){.t svg{transition:none}}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+footer{padding:6px 14px 10px;font-size:.85rem;opacity:.75;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="grp"><div id="lv">Level 1</div><div id="rt">Retries: 0</div></div>
+  <div id="msg" aria-live="polite">Water the plant</div>
+  <div class="grp"><button id="rs">Retry</button><button id="nx" class="go" hidden>Next level</button></div>
+</header>
+<main><div id="board"></div></main>
+<footer>Tap a pipe to turn it. Join the tap to the plant and the water turns blue as it flows. Grey rocks are in the way.</footer>
+<canvas id="fx" aria-hidden="true"></canvas>
+<script>
+const $=id=>document.getElementById(id);
+const rnd=k=>Math.floor(Math.random()*k);
+const DR=[-1,0,1,0],DC=[0,1,0,-1],BIT=[1,2,4,8];
+const rotn=(m,k)=>{for(let i=0;i<k%4;i++)m=((m<<1)|(m>>3))&15;return m};
+const mask=t=>t.rock?0:rotn(t.base,t.rot);
+let lvl=1,retries=0,R,C,tiles,orig,el,sr,fr,won,moved;
+try{const s=+localStorage.getItem('pipes-level');if(s>0)lvl=s}catch(e){}
+
+function params(L){
+  const r=Math.min(7,4+((L-1)/3|0)),c=Math.min(9,4+((L-1)/2|0)),cells=r*c;
+  return{R:r,C:c,minLen:Math.floor(cells*Math.min(.5,.28+L*.02)),
+    pX:Math.max(.02,.22-L*.02),pT:Math.max(.05,.3-L*.025),pCap:Math.min(.22,.05+L*.015),
+    rocks:L<3?0:Math.min(Math.floor(cells*.25),Math.floor((L-1)*.8)),
+    pathX:Math.max(0,.3-L*.04),pathT:Math.max(0,.4-L*.05)};
+}
+function walk(R,C,minLen){
+  for(let a=0;a<4000;a++){
+    const ml=a<3000?minLen:Math.floor(minLen/2),seen=new Set(),p=[[rnd(R),0]];seen.add(p[0][0]*C);let ok=false;
+    while(true){
+      const[r,c]=p[p.length-1];
+      if(c===C-1){ok=p.length>=ml;break}
+      const o=[];
+      for(let d=0;d<4;d++){const y=r+DR[d],x=c+DC[d];
+        if(y>=0&&y<R&&x>=0&&x<C&&!seen.has(y*C+x)&&(x<C-1||p.length+1>=ml))o.push([y,x])}
+      if(!o.length)break;
+      const n=o[rnd(o.length)];p.push(n);seen.add(n[0]*C+n[1]);
+    }
+    if(ok)return p;
+  }
+  const r=rnd(R);return Array.from({length:C},(_,c)=>[r,c]);
+}
+const dirOf=(a,b)=>{for(let d=0;d<4;d++)if(DR[d]===b[0]-a[0]&&DC[d]===b[1]-a[1])return d};
+function dec(m){
+  const n=[1,2,4,8].filter(b=>m&b).length,base=n===1?1:n===2?((m===5||m===10)?5:3):n===3?11:15;
+  for(let k=0;k<4;k++)if(rotn(base,k)===m)return[base,k];
+}
+function flow(){
+  const f=new Set(),s=sr*C;
+  if(!(mask(tiles[s])&8))return{f,win:false};
+  const q=[s];f.add(s);
+  while(q.length){
+    const i=q.pop(),r=(i/C)|0,c=i%C,m=mask(tiles[i]);
+    for(let d=0;d<4;d++){
+      if(!(m&BIT[d]))continue;const y=r+DR[d],x=c+DC[d];
+      if(y<0||y>=R||x<0||x>=C)continue;
+      const j=y*C+x;if(f.has(j))continue;
+      if(mask(tiles[j])&BIT[(d+2)%4]){f.add(j);q.push(j)}
+    }
+  }
+  const e=fr*C+C-1;return{f,win:f.has(e)&&!!(mask(tiles[e])&2)};
+}
+function setup(){
+  const P=params(lvl);R=P.R;C=P.C;
+  const path=walk(R,C,P.minLen),t=Array(R*C).fill(null);
+  path.forEach((cell,i)=>{
+    let m=(i?BIT[dirOf(cell,path[i-1])]:8)|(i<path.length-1?BIT[dirOf(cell,path[i+1])]:2);
+    const extra=[0,1,2,3].filter(d=>!(m&BIT[d])),q=Math.random();
+    if(q<P.pathX)m=15;else if(q<P.pathX+P.pathT)m|=BIT[extra[rnd(extra.length)]];
+    const[base,k]=dec(m);t[cell[0]*C+cell[1]]={base,rot:k+rnd(4)};
+  });
+  sr=path[0][0];fr=path[path.length-1][0];
+  const free=[];for(let i=0;i<R*C;i++)if(!t[i])free.push(i);
+  for(let i=free.length-1;i>0;i--){const j=rnd(i+1);[free[i],free[j]]=[free[j],free[i]]}
+  free.forEach((i,n)=>{
+    if(n<P.rocks){t[i]={rock:1};return}
+    const q=Math.random();
+    t[i]={base:q<P.pX?15:q<P.pX+P.pT?11:q<P.pX+P.pT+P.pCap?1:(rnd(2)?5:3),rot:rnd(4)};
+  });
+  tiles=t;
+  for(const[r,c]of path){if(!flow().win)break;tiles[r*C+c].rot++}
+  orig=tiles.map(x=>x.rot);
+}
+function svg(base){
+  const E=[[50,0],[100,50],[50,100],[0,50]];let o='';
+  for(let d=0;d<4;d++)if(base&BIT[d])o+=`<line x1="50" y1="50" x2="${E[d][0]}" y2="${E[d][1]}"/>`;
+  return `<svg viewBox="0 0 100 100"><g class="o">${o}</g><circle class="oq" cx="50" cy="50" r="20"/><g class="p">${o}</g><circle class="q" cx="50" cy="50" r="12"/></svg>`;
+}
+function mount(){
+  const b=$('board');b.innerHTML='';b.style.gridTemplateColumns=`repeat(${C+2},var(--c))`;el=[];
+  for(let r=0;r<R;r++){
+    const a=document.createElement('div');a.className='mk';if(r===sr)a.textContent='🚰';b.appendChild(a);
+    for(let c=0;c<C;c++){
+      const i=r*C+c,t=tiles[i],d=document.createElement('div');
+      d.className='t'+(t.rock?' rock':'');d.dataset.i=i;if(!t.rock)d.innerHTML=svg(t.base);
+      b.appendChild(d);el[i]=d;
+    }
+    const z=document.createElement('div');z.className='mk';if(r===fr){z.id='drain';z.textContent='🌱'}b.appendChild(z);
+  }
+  size();paint();
+}
+function size(){
+  const m=document.querySelector('main'),W=m.clientWidth-28,H=m.clientHeight-28;
+  document.documentElement.style.setProperty('--c',Math.max(30,Math.min(84,Math.floor(Math.min(W/(C+2),H/R))))+'px');
+}
+function paint(){
+  const{f,win}=flow();
+  el.forEach((d,i)=>{const t=tiles[i];if(t.rock)return;d.classList.toggle('w',f.has(i));d.firstChild.style.transform=`rotate(${t.rot*90}deg)`});
+  return win;
+}
+function begin(){
+  stopFx();setup();won=moved=false;
+  $('lv').textContent='Level '+lvl;$('rt').textContent='Retries: '+retries;
+  $('msg').textContent='Water the plant';$('nx').hidden=true;mount();
+}
+function win(){
+  won=true;$('drain').textContent='🌻';
+  $('msg').textContent='Watered!'+(retries?' ('+retries+(retries===1?' retry':' retries')+')':'');
+  $('nx').hidden=false;try{localStorage.setItem('pipes-level',lvl+1)}catch(e){}
+  fireworks();
+}
+$('board').addEventListener('click',e=>{
+  const d=e.target.closest('.t');if(!d||won)return;
+  const t=tiles[+d.dataset.i];if(t.rock)return;
+  t.rot++;moved=true;if(paint())win();
+});
+$('rs').onclick=()=>{
+  if(won)return;if(moved)retries++;
+  tiles.forEach((t,i)=>{if(!t.rock)t.rot=orig[i]});moved=false;
+  $('rt').textContent='Retries: '+retries;$('msg').textContent='Water the plant';paint();
+};
+$('nx').onclick=()=>{lvl++;retries=0;begin()};
+addEventListener('resize',size);
+
+const FXC=['#e4572e','#f2a900','#3fa34d','#1f8fd1','#7a52c7','#e0559a','#14b5a5'];
+let fxRaf=0,parts=[];
+function stopFx(){cancelAnimationFrame(fxRaf);fxRaf=0;parts=[];const c=$('fx');c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function burst(cx,cy){for(let i=0;i<60;i++){const a=Math.random()*6.283,v=2+Math.random()*5;
+  parts.push({x:cx,y:cy,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:1,c:FXC[rnd(FXC.length)]})}}
+function fireworks(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const c=$('fx'),x=c.getContext('2d'),dpr=window.devicePixelRatio||1,W=innerWidth,H=innerHeight;
+  c.width=W*dpr;c.height=H*dpr;x.scale(dpr,dpr);
+  let t=0,next=0;
+  (function frame(){
+    x.clearRect(0,0,W,H);
+    if(t<150&&t>=next){burst(W*(.15+Math.random()*.7),H*(.15+Math.random()*.4));next=t+18+rnd(14)}
+    parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.06;p.vx*=.985;p.l-=.011;x.globalAlpha=Math.max(p.l,0);x.fillStyle=p.c;x.beginPath();x.arc(p.x,p.y,2.6,0,6.283);x.fill()});
+    parts=parts.filter(p=>p.l>0);t++;
+    if(t<150||parts.length)fxRaf=requestAnimationFrame(frame);else x.clearRect(0,0,W,H);
+  })();
+}
+begin();
+</script>
+</body>
+</html>
