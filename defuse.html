@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Defuse</title>
+<style>
+:root{--bg:#f1f0ec;--panel:#dedcd3;--ink:#22252a;--soft:#cdcabf;--tile:#fbfaf6;--off:#a7a296;--on:#22a75a;--accent:#d93a2b;--btn:#22252a;--btnink:#f1f0ec;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14161a;--panel:#1f2227;--ink:#e9e8e3;--soft:#343840;--tile:#1f2227;--off:#5b5f68;--on:#4ade80;--accent:#ff6a5a;--btn:#e9e8e3;--btnink:#14161a;color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+header{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--panel)}
+.grp{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+button{font:inherit;font-weight:700;border:0;border-radius:10px;padding:10px 16px;min-height:44px;background:var(--soft);color:var(--ink)}
+button.go{background:var(--btn);color:var(--btnink)}
+button:focus-visible,.sw:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#lv{font-size:1.4rem;font-weight:800}
+#rt{font-weight:700;opacity:.75;font-size:.95rem}
+#tm{font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;min-width:3.6ch;text-align:center}
+#tm.low{color:var(--accent)}
+#msg{font-weight:700;min-width:18ch;text-align:center}
+#fusewrap{height:8px;background:var(--soft)}
+#fuse{height:100%;width:100%;background:var(--accent);transition:width .1s linear}
+main{flex:1;min-height:0;padding:10px}
+#cv{width:100%;height:100%;display:block}
+.wire{fill:none;stroke:var(--off);stroke-width:5;stroke-linecap:round}
+.wire.on{stroke:var(--on)}
+.gb{fill:var(--tile);stroke:var(--off);stroke-width:3.5}
+.gate.on .gb{stroke:var(--on)}
+.gate text{fill:var(--ink);font-weight:800;font-size:19px;text-anchor:middle;dominant-baseline:central}
+.sw{cursor:pointer}
+.sw rect{fill:var(--off)}
+.sw.on rect{fill:var(--on)}
+.sw circle{fill:#fff;transform:translateX(-12px);transition:transform .12s}
+.sw.on circle{transform:translateX(12px)}
+.sw text{font-size:13px;font-weight:800;fill:var(--ink);text-anchor:middle}
+#bomb{font-size:64px;text-anchor:middle;dominant-baseline:central}
+@media (prefers-reduced-motion:reduce){.sw circle,#fuse{transition:none}}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+footer{padding:6px 14px 10px;font-size:.85rem;opacity:.8;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div class="grp"><div id="lv">Level 1</div><div id="rt">Retries: 0</div></div>
+  <div class="grp"><div id="tm">0:00</div><div id="msg" aria-live="polite"></div></div>
+  <div class="grp"><button id="tg" aria-pressed="true">Timer: on</button><button id="rs">Retry</button><button id="nx" class="go" hidden>Next level</button></div>
+</header>
+<div id="fusewrap"><div id="fuse"></div></div>
+<main><svg id="cv" role="group" aria-label="Logic circuit"></svg></main>
+<footer id="legend"></footer>
+<canvas id="fx" aria-hidden="true"></canvas>
+<script>
+const $=id=>document.getElementById(id);
+const rnd=k=>Math.floor(Math.random()*k);
+const OPS={AND:(a,b)=>a&b,OR:(a,b)=>a|b,NAND:(a,b)=>1-(a&b),NOR:(a,b)=>1-(a|b),XOR:(a,b)=>a^b,NOT:a=>1-a};
+const HELP={AND:'AND: both on',OR:'OR: either on',NOT:'NOT: flips it',NAND:'NAND: on unless both on',NOR:'NOR: on only if both off',XOR:'XOR: exactly one on'};
+let lvl=1,retries=0,nodes,layers,K,init,sw,limit,started,over,won,timerOn=true,tmr=0,tEnd=0;
+try{const s=+localStorage.getItem('defuse-level');if(s>0)lvl=s;if(localStorage.getItem('defuse-timer')==='off')timerOn=false}catch(e){}
+
+function evalAll(st){
+  const v=[];
+  nodes.forEach((n,id)=>{v[id]=n.t==='IN'?st[id]:n.t==='NOT'?OPS.NOT(v[n.ins[0]]):OPS[n.t](v[n.ins[0]],v[n.ins[1]])});
+  return v;
+}
+function makeCircuit(k,L){
+  const bin=L<5?['AND','OR']:L<8?['AND','OR','NAND','NOR']:['AND','OR','NAND','NOR','XOR','XOR'],useNot=L>=3;
+  nodes=[];layers=[[]];
+  for(let i=0;i<k;i++){nodes.push({t:'IN',ins:[]});layers[0].push(i)}
+  let s=k;
+  while(s>1){
+    const prev=layers[layers.length-1];let ns=Math.ceil(s/2);
+    if(L>=4&&s>2&&ns+1<s&&rnd(2))ns++;
+    const cur=[];for(let g=0;g<ns;g++){nodes.push({t:'',ins:[]});cur.push(nodes.length-1)}
+    prev.forEach((id,pi)=>nodes[cur[Math.floor(pi*ns/s)]].ins.push(id));
+    cur.forEach(id=>{
+      const n=nodes[id];
+      if(n.ins.length===1){
+        if(useNot&&Math.random()<.5)n.t='NOT';
+        else{const pi=prev.indexOf(n.ins[0]);n.ins.push(prev[pi+1<s?pi+1:pi-1])}
+      }
+      if(!n.t)n.t=bin[rnd(bin.length)];
+    });
+    layers.push(cur);s=ns;
+  }
+}
+function generate(){
+  K=Math.min(10,3+Math.floor(lvl*.7));
+  const maxFrac=Math.max(.1,.7-lvl*.07);
+  for(let a=0;a<600;a++){
+    makeCircuit(K,lvl);
+    const zeros=[];let ones=0;
+    for(let m=0;m<(1<<K);m++){
+      const st=Array.from({length:K},(_,i)=>(m>>i)&1),v=evalAll(st);
+      if(v[v.length-1])ones++;else zeros.push(st);
+    }
+    if(ones>=1&&zeros.length&&(a>=400||ones/(1<<K)<=maxFrac)){init=zeros[rnd(zeros.length)];return}
+  }
+}
+function build(){
+  const D=layers.length-1,rowH=62,H=Math.max(K*rowH,300),cx=l=>70+l*150,bx=cx(D+1);
+  const pos=id=>{const l=nodes[id].l;return{x:cx(l),y:(layers[l].indexOf(id)+.5)*H/layers[l].length}};
+  nodes.forEach((n,id)=>{});layers.forEach((L,l)=>L.forEach(id=>nodes[id].l=l));
+  let w='',g='';
+  nodes.forEach((n,id)=>{
+    const p=pos(id);
+    n.ins.forEach(s=>{const q=pos(s),x1=q.x+(nodes[s].t==='IN'?32:42),x2=p.x-42,m=(x1+x2)/2;
+      w+=`<path class="wire" data-w="${s}" d="M${x1} ${q.y}C${m} ${q.y} ${m} ${p.y} ${x2} ${p.y}"/>`});
+    if(n.t==='IN')g+=`<g class="sw" data-s="${id}" tabindex="0" role="button" aria-label="Switch ${id+1}"><rect x="${p.x-32}" y="${p.y-20}" width="64" height="40" rx="20"/><circle cx="${p.x}" cy="${p.y}" r="15"/><text x="${p.x}" y="${p.y+36}">${id+1}</text></g>`;
+    else g+=`<g class="gate" data-g="${id}"><rect class="gb" x="${p.x-42}" y="${p.y-22}" width="84" height="44" rx="10"/><text x="${p.x}" y="${p.y}">${n.t}</text></g>`;
+  });
+  const last=nodes.length-1,p=pos(last);
+  w+=`<path class="wire" data-w="${last}" d="M${p.x+42} ${p.y}L${bx-44} ${H/2}"/>`;
+  g+=`<text id="bomb" x="${bx}" y="${H/2}">💣</text>`;
+  $('cv').setAttribute('viewBox',`0 0 ${bx+60} ${H}`);$('cv').innerHTML=w+g;
+  const used=[...new Set(nodes.filter(n=>n.t!=='IN').map(n=>n.t))];
+  $('legend').textContent='Get power to the bomb to defuse it. '+used.map(t=>HELP[t]).join(' · ');
+}
+function update(){
+  const v=evalAll(sw);
+  document.querySelectorAll('[data-w]').forEach(e=>e.classList.toggle('on',!!v[+e.dataset.w]));
+  document.querySelectorAll('[data-g]').forEach(e=>e.classList.toggle('on',!!v[+e.dataset.g]));
+  document.querySelectorAll('[data-s]').forEach(e=>{const on=!!sw[+e.dataset.s];e.classList.toggle('on',on);e.setAttribute('aria-pressed',on)});
+  return v[v.length-1];
+}
+const fmt=s=>Math.floor(s/60)+':'+String(Math.ceil(s%60)%60).padStart(2,'0');
+function showTime(rem){
+  $('tm').textContent=timerOn?fmt(Math.max(0,Math.ceil(rem))):'—';
+  $('tm').classList.toggle('low',timerOn&&rem<=10);
+  $('fuse').style.width=timerOn?Math.max(0,rem/limit*100)+'%':'0%';
+}
+function startTimer(){
+  clearInterval(tmr);tEnd=performance.now()+limit*1000;
+  tmr=setInterval(()=>{const rem=(tEnd-performance.now())/1000;showTime(rem);if(rem<=0)explode()},100);
+}
+function explode(){
+  clearInterval(tmr);over=true;$('bomb').textContent='💥';$('msg').textContent='BOOM! Tap Retry';
+}
+function reset(){
+  clearInterval(tmr);sw=init.slice();started=over=false;
+  $('msg').textContent=timerOn?'Tap a switch to start the clock':'Tap switches to power the bomb';
+  showTime(limit);const b=$('bomb');if(b)b.textContent='💣';update();
+}
+function begin(){
+  stopFx();won=false;generate();build();
+  limit=Math.max(50,60+K*5-lvl*2);
+  $('lv').textContent='Level '+lvl;$('rt').textContent='Retries: '+retries;$('nx').hidden=true;
+  $('tg').textContent='Timer: '+(timerOn?'on':'off');$('tg').setAttribute('aria-pressed',timerOn);
+  reset();
+}
+function win(){
+  clearInterval(tmr);won=true;$('bomb').textContent='✅';
+  $('msg').textContent='Defused!'+(retries?' ('+retries+(retries===1?' retry':' retries')+')':'');
+  $('nx').hidden=false;try{localStorage.setItem('defuse-level',lvl+1)}catch(e){}
+  fireworks();
+}
+function tap(el){
+  if(over||won)return;const i=+el.dataset.s;sw[i]^=1;
+  if(!started){started=true;if(timerOn)startTimer();$('msg').textContent='Defuse it!'}
+  if(update())win();
+}
+$('cv').addEventListener('click',e=>{const s=e.target.closest('.sw');if(s)tap(s)});
+$('cv').addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const s=e.target.closest('.sw');if(s){e.preventDefault();tap(s)}});
+$('rs').onclick=()=>{if(won)return;if(started||over)retries++;$('rt').textContent='Retries: '+retries;reset()};
+$('nx').onclick=()=>{lvl++;retries=0;begin()};
+$('tg').onclick=()=>{
+  timerOn=!timerOn;try{localStorage.setItem('defuse-timer',timerOn?'on':'off')}catch(e){}
+  $('tg').textContent='Timer: '+(timerOn?'on':'off');$('tg').setAttribute('aria-pressed',timerOn);
+  clearInterval(tmr);
+  if(timerOn&&started&&!over&&!won)startTimer();else showTime(limit);
+};
+
+const FXC=['#e4572e','#f2a900','#3fa34d','#1f8fd1','#7a52c7','#e0559a','#14b5a5'];
+let fxRaf=0,parts=[];
+function stopFx(){cancelAnimationFrame(fxRaf);fxRaf=0;parts=[];const c=$('fx');c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function burst(cx,cy){for(let i=0;i<60;i++){const a=Math.random()*6.283,v=2+Math.random()*5;
+  parts.push({x:cx,y:cy,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:1,c:FXC[rnd(FXC.length)]})}}
+function fireworks(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const c=$('fx'),x=c.getContext('2d'),dpr=window.devicePixelRatio||1,W=innerWidth,H=innerHeight;
+  c.width=W*dpr;c.height=H*dpr;x.scale(dpr,dpr);
+  let t=0,next=0;
+  (function frame(){
+    x.clearRect(0,0,W,H);
+    if(t<150&&t>=next){burst(W*(.15+Math.random()*.7),H*(.15+Math.random()*.4));next=t+18+rnd(14)}
+    parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.06;p.vx*=.985;p.l-=.011;x.globalAlpha=Math.max(p.l,0);x.fillStyle=p.c;x.beginPath();x.arc(p.x,p.y,2.6,0,6.283);x.fill()});
+    parts=parts.filter(p=>p.l>0);t++;
+    if(t<150||parts.length)fxRaf=requestAnimationFrame(frame);else x.clearRect(0,0,W,H);
+  })();
+}
+begin();
+</script>
+</body>
+</html>
