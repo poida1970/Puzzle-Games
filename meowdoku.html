@@ -136,7 +136,7 @@ function build(){
 }
 function size(){
   const m=document.querySelector('main'),w=m.clientWidth-30,h=m.clientHeight-30;
-  document.documentElement.style.setProperty('--c',Math.max(28,Math.min(80,Math.floor(Math.min(w,h)/n)))+'px');
+  document.documentElement.style.setProperty('--c',Math.max(28,Math.min(160,Math.floor(Math.min(w,h)/n)))+'px');
 }
 function draw(){
   const cells=$('board').children;

@@ -136,7 +136,7 @@ function mount(){
 }
 function size(){
   const m=document.querySelector('main'),W=m.clientWidth-28,H=m.clientHeight-28;
-  document.documentElement.style.setProperty('--c',Math.max(30,Math.min(84,Math.floor(Math.min(W/(C+2),H/R))))+'px');
+  document.documentElement.style.setProperty('--c',Math.max(30,Math.min(160,Math.floor(Math.min(W/(C+2),H/R))))+'px');
 }
 function paint(){
   const{f,win}=flow();

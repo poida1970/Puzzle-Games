@@ -96,7 +96,7 @@ function size(){
   let best=30;
   for(let rows=1;rows<=3;rows++){
     const cols=Math.ceil(n/rows);
-    const w=Math.min(84,Math.floor((W-g*(cols-1))/cols));
+    const w=Math.min(150,Math.floor((W-g*(cols-1))/cols));
     const s=Math.floor((w-14)*.95),need=rows*(s*4+14+14)+(rows-1)*g;
     if(need<=H&&w>best){best=w}
   }

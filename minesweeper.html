@@ -100,7 +100,7 @@ function init(){
 }
 function size(){
   const m=document.querySelector('main'),w=m.clientWidth-24,h=m.clientHeight-24;
-  const s=Math.max(18,Math.min(64,Math.floor(Math.min((w-2)/C-2,(h-2)/R-2))));
+  const s=Math.max(18,Math.min(150,Math.floor(Math.min((w-2)/C-2,(h-2)/R-2))));
   document.documentElement.style.setProperty('--c',s+'px');
 }
 function place(safe){
