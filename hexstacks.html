@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hex Stacks</title>
+<style>
+:root{--bg:#f3efe6;--panel:#e1dac8;--ink:#2a2622;--soft:#d0c7b0;--cell:#e6dfcf;--cellline:#c4b99f;--lock:#a89f8c;--accent:#e4572e;--btn:#2a2622;--btnink:#f3efe6;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16171c;--panel:#21232a;--ink:#ece8dd;--soft:#363944;--cell:#2a2d36;--cellline:#434754;--lock:#15161b;--accent:#ff7a50;--btn:#ece8dd;--btnink:#16171c;color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;height:100dvh;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+button{font:inherit;color:var(--ink);border:0;cursor:pointer;touch-action:manipulation}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+header{display:flex;gap:10px;align-items:center;padding:8px 12px;background:var(--panel);flex:none}
+#lv{font-size:1.1rem;font-weight:800}
+#rt{font-size:.9rem;font-weight:700;opacity:.75}
+#cl{font-weight:800;font-variant-numeric:tabular-nums}
+.sp{flex:1}
+#msg{flex:none;min-height:2.4em;padding:3px 14px;font-size:.9rem;font-weight:700;text-align:center;display:flex;align-items:center;justify-content:center;line-height:1.25}
+main{flex:1;min-height:0;position:relative}
+#cv{position:absolute;inset:0;width:100%;height:100%;touch-action:manipulation}
+#acts{flex:none;display:flex;gap:10px;padding:8px 12px 12px;max-width:560px;width:100%;margin:0 auto}
+.btn{flex:1;font-weight:700;border-radius:12px;padding:8px 14px;min-height:48px;background:var(--soft);font-size:1rem}
+.btn.go{background:var(--btn);color:var(--btnink)}
+.btn:disabled{opacity:.4}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+@media (max-height:560px){#msg{display:none}}
+</style>
+</head>
+<body>
+<header><div id="lv">Level 1</div><div id="rt">Retries: 0</div><div class="sp"></div><div id="cl">Clears 0/3</div></header>
+<div id="msg" aria-live="polite"></div>
+<main><canvas id="cv" aria-label="Hex Stacks board"></canvas></main>
+<div id="acts"><button class="btn" id="un">Undo</button><button class="btn" id="hn">Hint</button><button class="btn" id="rs">Retry</button><button class="btn go" id="nx" hidden>Next level</button></div>
+<canvas id="fx" aria-hidden="true"></canvas>
+<script>
+const $=id=>document.getElementById(id);
+const rnd=k=>Math.floor(Math.random()*k);
+const pick=a=>a[rnd(a.length)];
+const R=2,SQ=Math.sqrt(3),CAP=10;
+const CELLS=[],IDX={};
+for(let q=-R;q<=R;q++)for(let r=-R;r<=R;r++){if(Math.abs(q+r)>R)continue;IDX[q+','+r]=CELLS.length;CELLS.push({q,r})}
+const NB=CELLS.map(c=>[[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]].map(d=>IDX[(c.q+d[0])+','+(c.r+d[1])]).filter(x=>x!==undefined));
+const HUE=[2,48,135,205,280,172],SYM=['●','■','▲','◆','★','✚'];
+const cv=$('cv'),ctx=cv.getContext('2d');
+let lvl=1,retries=0,C,goal,board,locked,tray,sel,clears,hist,startSnap,busy,won,lost,hintCell,pulse,L={s:30,cx:0,cy:0,ty:0},col={};
+try{const s=+localStorage.getItem('hex-level');if(s>0)lvl=s}catch(e){}
+
+const topRun=s=>{let k=1;while(k<s.length&&s[s.length-1-k]===s[s.length-1])k++;return s.length?k:0};
+const copyBoard=b=>b.map(s=>s.slice());
+function resolve(b){
+  const steps=[];
+  for(let g=0;g<800;g++){
+    let did=false;
+    for(let i=0;i<b.length;i++){const s=b[i];if(s.length&&topRun(s)>=CAP){const n=topRun(s);s.length-=n;steps.push({t:'clear',i,n});did=true;break}}
+    if(did)continue;
+    outer:for(let i=0;i<b.length;i++){
+      if(!b[i].length)continue;
+      for(const j of NB[i]){
+        if(j<i||!b[j].length)continue;
+        const a=b[i],c=b[j];
+        if(a[a.length-1]!==c[c.length-1])continue;
+        let from=i,to=j;
+        if(a.length>c.length||(a.length===c.length&&topRun(a)>topRun(c))){from=j;to=i}
+        const n=topRun(b[from]),tiles=b[from].splice(-n,n);b[to].push(...tiles);
+        steps.push({t:'move',from,to,n});did=true;break outer;
+      }
+    }
+    if(!did)break;
+  }
+  return steps;
+}
+function randStack(useBias=true){
+  const h=2+rnd(3),two=Math.random()<.6,split=1+rnd(h-1),pc=()=>{
+    if(useBias&&Math.random()<.5){const t=board.filter(s=>s.length).map(s=>s[s.length-1]);if(t.length)return pick(t)}
+    return rnd(C)};
+  const c1=pc(),c2=pc(),s=[];
+  for(let i=0;i<h;i++)s.push(two&&i>=split?c2:c1);
+  return s;
+}
+const snap=()=>({board:copyBoard(board),tray:tray.map(s=>s&&s.slice()),clears});
+function restore(s){board=copyBoard(s.board);tray=s.tray.map(x=>x&&x.slice());clears=s.clears}
+function begin(){
+  stopFx();C=Math.min(6,3+((lvl-1)/3|0));goal=Math.min(14,3+lvl);
+  board=CELLS.map(()=>[]);locked=CELLS.map(()=>false);
+  const nl=lvl<3?0:Math.min(5,(lvl-1)>>1),cand=CELLS.map((_,i)=>i).filter(i=>i!==IDX['0,0']).sort(()=>Math.random()-.5);
+  for(let k=0;k<nl;k++)locked[cand[k]]=true;
+  const free=CELLS.map((_,i)=>i).filter(i=>!locked[i]).sort(()=>Math.random()-.5);
+  for(let k=0;k<3+Math.min(3,lvl>>1);k++)board[free[k]]=randStack(false);
+  resolve(board);
+  clears=0;tray=[randStack(),randStack(),randStack()];sel=-1;hist=[];won=lost=busy=false;hintCell=-1;pulse=null;
+  startSnap=snap();
+  $('lv').textContent='Level '+lvl;$('rt').textContent='Retries: '+retries;
+  $('nx').hidden=true;['un','hn','rs'].forEach(id=>$(id).hidden=false);
+  say('Tap a stack below, then tap an empty cell. Matching tops merge, and 10 in a row clear.');ui();
+}
+const say=t=>$('msg').textContent=t;
+function ui(){$('cl').textContent=`Clears ${clears}/${goal}`;$('un').disabled=!hist.length||busy}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function place(i){
+  hist.push(snap());if(hist.length>30)hist.shift();
+  board[i]=tray[sel].slice();tray[sel]=null;sel=-1;hintCell=-1;busy=true;ui();
+  const steps=resolve(copyBoard(board)),quick=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  for(const st of steps){
+    await sleep(quick?0:240);
+    if(st.t==='move'){const tiles=board[st.from].splice(-st.n,st.n);board[st.to].push(...tiles);pulse={i:st.to,t:performance.now()+260}}
+    else{board[st.i].splice(-st.n,st.n);clears++;pulse={i:st.i,t:performance.now()+300};ui()}
+  }
+  busy=false;
+  if(clears>=goal){win();return}
+  if(tray.every(s=>!s))tray=[randStack(),randStack(),randStack()];
+  const empty=board.filter((s,k)=>!locked[k]&&!s.length).length;
+  if(!empty&&tray.some(Boolean)){lost=true;say('The board is full! Tap Undo or Retry.')}
+  else say(steps.length?'Nice! Pick your next stack.':'Pick a stack, then a cell.');
+  ui();
+}
+function win(){
+  won=true;say('Level complete!'+(retries?` (${retries} ${retries===1?'retry':'retries'})`:''));
+  $('nx').hidden=false;['un','hn','rs'].forEach(id=>$(id).hidden=true);
+  try{localStorage.setItem('hex-level',lvl+1)}catch(e){}
+  ui();fireworks();
+}
+function hint(){
+  let best=null;
+  tray.forEach((st,si)=>{if(!st)return;board.forEach((s,i)=>{
+    if(locked[i]||s.length)return;
+    const b=copyBoard(board);b[i]=st.slice();const steps=resolve(b);
+    const cl=steps.filter(x=>x.t==='clear').length,emp=b.filter((x,k)=>!locked[k]&&!x.length).length;
+    const sc=cl*100+emp*3+steps.length;
+    if(!best||sc>best.sc)best={sc,si,i};
+  })});
+  return best;
+}
+/* drawing */
+function readColors(){const c=getComputedStyle(document.documentElement);['cell','cellline','lock','ink'].forEach(k=>col[k]=c.getPropertyValue('--'+k).trim())}
+function layout(){
+  const m=document.querySelector('main'),w=m.clientWidth,h=m.clientHeight,dpr=window.devicePixelRatio||1;
+  cv.width=w*dpr;cv.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+  const s=Math.max(14,Math.min(w/(SQ*(2*R+1)+.6),h/13.6));
+  L={w,h,s,cx:w/2,cy:2.3*s+4*s};L.ty=L.cy+4*s+1.9*s;
+}
+const cellXY=i=>({x:L.cx+L.s*SQ*(CELLS[i].q+CELLS[i].r/2),y:L.cy+L.s*1.5*CELLS[i].r});
+function hexPath(x,y,s){ctx.beginPath();for(let k=0;k<6;k++){const a=Math.PI/180*(60*k-30),px=x+s*Math.cos(a),py=y+s*Math.sin(a);k?ctx.lineTo(px,py):ctx.moveTo(px,py)}ctx.closePath()}
+function drawStack(st,x,y,s){
+  if(!st||!st.length)return;
+  const th=Math.min(s*.2,s*2.4/st.length);
+  for(let k=0;k<st.length;k++){
+    const yy=y-k*th,h=HUE[st[k]];
+    ctx.fillStyle=`hsl(${h} 62% 34%)`;hexPath(x,yy+th*.6,s*.92);ctx.fill();
+    ctx.fillStyle=`hsl(${h} 72% 58%)`;hexPath(x,yy,s*.92);ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,.25)';ctx.lineWidth=1;ctx.stroke();
+  }
+  const top=st[st.length-1],run=topRun(st),yt=y-(st.length-1)*th;
+  ctx.fillStyle='rgba(255,255,255,.95)';ctx.strokeStyle='rgba(0,0,0,.45)';ctx.lineWidth=3;
+  ctx.font=`800 ${s*.52}px "Trebuchet MS",sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+  const t=run>=2?String(run):SYM[top];ctx.strokeText(t,x,yt+1);ctx.fillText(t,x,yt+1);
+}
+function draw(){
+  const now=performance.now();
+  ctx.clearRect(0,0,L.w,L.h);
+  const order=CELLS.map((_,i)=>i).sort((a,b)=>CELLS[a].r-CELLS[b].r);
+  order.forEach(i=>{
+    const{x,y}=cellXY(i);
+    hexPath(x,y,L.s*.96);ctx.fillStyle=locked[i]?col.lock:col.cell;ctx.fill();ctx.strokeStyle=col.cellline;ctx.lineWidth=2;ctx.stroke();
+    if(locked[i]){ctx.fillStyle=col.cellline;ctx.font=`${L.s*.6}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('✖',x,y)}
+    if(i===hintCell){ctx.strokeStyle='#f2b705';ctx.lineWidth=4;hexPath(x,y,L.s*.96);ctx.stroke()}
+  });
+  order.forEach(i=>{
+    const{x,y}=cellXY(i);drawStack(board[i],x,y,L.s);
+    if(pulse&&pulse.i===i&&pulse.t>now){ctx.strokeStyle='#fff';ctx.lineWidth=4;hexPath(x,y,L.s*.96);ctx.stroke()}
+  });
+  const st=L.s*.7;
+  tray.forEach((s,k)=>{
+    const x=L.w*(k+.5)/3,y=L.ty;
+    if(k===sel){ctx.strokeStyle='#f2b705';ctx.lineWidth=4;hexPath(x,y,st*1.05);ctx.stroke()}
+    drawStack(s,x,y,st);
+  });
+}
+function loop(){draw();requestAnimationFrame(loop)}
+cv.addEventListener('pointerdown',e=>{
+  if(busy||won)return;
+  const r=cv.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top;
+  if(py>L.cy+4*L.s+.2*L.s){
+    const k=Math.floor(px/(L.w/3));
+    if(tray[k]){sel=sel===k?-1:k;hintCell=-1;say(sel>=0?'Now tap an empty cell.':'Pick a stack, then a cell.')}
+    return;
+  }
+  if(lost)return;
+  let best=-1,bd=1e9;
+  CELLS.forEach((_,i)=>{const c=cellXY(i),d=Math.hypot(px-c.x,py-c.y);if(d<bd){bd=d;best=i}});
+  if(bd>L.s*1.05)return;
+  if(sel<0){say('Pick one of the stacks at the bottom first.');return}
+  if(locked[best]){say('That cell is blocked.');return}
+  if(board[best].length){say('That cell already has a stack. Pick an empty one.');return}
+  place(best);
+});
+$('un').onclick=()=>{if(busy||won||!hist.length)return;restore(hist.pop());sel=-1;lost=false;hintCell=-1;say('Undone.');ui()};
+$('hn').onclick=()=>{
+  if(busy||won||lost)return;const h=hint();if(!h){say('No empty cells left.');return}
+  sel=h.si;hintCell=h.i;say('Try this stack in the highlighted cell.');
+};
+$('rs').onclick=()=>{if(busy||won)return;if(hist.length)retries++;restore(startSnap);hist=[];sel=-1;lost=false;hintCell=-1;$('rt').textContent='Retries: '+retries;say('Fresh start. Pick a stack.');ui()};
+$('nx').onclick=()=>{lvl++;retries=0;begin()};
+addEventListener('resize',layout);
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',readColors);
+
+const FXC=['#e4572e','#f2a900','#3fa34d','#1f8fd1','#7a52c7','#e0559a','#14b5a5'];
+let fxRaf=0,parts=[];
+function stopFx(){cancelAnimationFrame(fxRaf);fxRaf=0;parts=[];const c=$('fx');c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function burst(cx,cy){for(let i=0;i<60;i++){const a=Math.random()*6.283,v=2+Math.random()*5;
+  parts.push({x:cx,y:cy,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:1,c:FXC[rnd(FXC.length)]})}}
+function fireworks(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+  const c=$('fx'),x=c.getContext('2d'),dpr=window.devicePixelRatio||1,Wd=innerWidth,H=innerHeight;
+  c.width=Wd*dpr;c.height=H*dpr;x.scale(dpr,dpr);
+  let t=0,next=0;
+  (function frame(){
+    x.clearRect(0,0,Wd,H);
+    if(t<150&&t>=next){burst(Wd*(.15+Math.random()*.7),H*(.15+Math.random()*.4));next=t+18+rnd(14)}
+    parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.06;p.vx*=.985;p.l-=.011;x.globalAlpha=Math.max(p.l,0);x.fillStyle=p.c;x.beginPath();x.arc(p.x,p.y,2.6,0,6.283);x.fill()});
+    parts=parts.filter(p=>p.l>0);t++;
+    if(t<150||parts.length)fxRaf=requestAnimationFrame(frame);else x.clearRect(0,0,Wd,H);
+  })();
+}
+readColors();layout();begin();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
