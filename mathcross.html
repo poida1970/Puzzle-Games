@@ -132,13 +132,13 @@ function placeEq(s,r0,c0,dir){
 }
 function buildGrid(){
   n=lvl<4?7:lvl<8?8:9;
-  const want=Math.min(14,3+lvl);
-  for(let attempt=0;attempt<80;attempt++){
+  const want=Math.min(8,3+lvl);let best=null;
+  for(let attempt=0;attempt<22;attempt++){
     GR=Array.from({length:n},()=>Array(n).fill(null));EQS=[];
-    let s=randEq();
+    const s=randEq();
     if(s.length>n)continue;
     placeEq(s,1+rnd(n-2),rnd(n-s.length+1),'a');
-    for(let it=0;it<500&&EQS.length<want;it++){
+    for(let it=0;it<350&&EQS.length<want;it++){
       const digs=[];GR.forEach(row=>row.forEach(c=>{if(c&&c.dig&&c.eqs.length===1)digs.push(c)}));
       if(!digs.length)break;
       const cell=pick(digs),dir=cell.dir==='a'?'d':'a',opts=[];
@@ -152,8 +152,10 @@ function buildGrid(){
       }
       if(opts.length){const[e,r0,c0]=pick(opts);placeEq(e,r0,c0,dir)}
     }
-    if(EQS.length>=Math.min(want,3+(lvl>2?1:0))){hideDigits();return}
+    if(!best||EQS.length>best.EQS.length)best={GR,EQS};
+    if(EQS.length>=want)break;
   }
+  GR=best.GR;EQS=best.EQS;hideDigits();
 }
 function hideDigits(){
   const digs=[];GR.forEach(row=>row.forEach(c=>{if(c&&c.dig)digs.push(c)}));
