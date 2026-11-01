@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sum Grid</title>
+<style>
+:root{--bg:#eef0f5;--panel:#d7dbe7;--ink:#1c2230;--soft:#c3c9db;--white:#ffffff;--dark:#2b3144;--darkink:#e9ecf6;--line:#8d95ad;--sel:#ffe9a8;--run:#eef3ff;--good:#1f9d55;--bad:#d93a3a;--warn:#d98a1a;--given:#e4e8f3;--accent:#3a63d9;--btn:#1c2230;--btnink:#eef0f5;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121520;--panel:#1c2030;--ink:#e9ecf6;--soft:#2e3550;--white:#1e2438;--dark:#0b0d15;--darkink:#e9ecf6;--line:#4a5372;--sel:#5b4a12;--run:#262e49;--good:#4ade80;--bad:#ff7070;--warn:#f0b04a;--given:#2a3250;--accent:#7a9bff;--btn:#e9ecf6;--btnink:#121520;color-scheme:dark}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;height:100dvh;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+button{font:inherit;color:var(--ink);border:0;cursor:pointer;touch-action:manipulation}
+button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+header{display:flex;gap:10px;align-items:center;padding:6px 12px;background:var(--panel);flex:none}
+#lv{font-size:1.1rem;font-weight:800}
+#rt{font-size:.9rem;font-weight:700;opacity:.75}
+#prog{font-weight:800;font-variant-numeric:tabular-nums}
+.sp{flex:1}
+.ib{background:var(--soft);border-radius:12px;width:44px;height:44px;font-size:1.2rem}
+#msg{flex:none;min-height:2.6em;padding:3px 14px;font-size:.88rem;font-weight:700;text-align:center;display:flex;align-items:center;justify-content:center;line-height:1.25}
+main{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:0 8px}
+#grid{display:grid;gap:2px;background:var(--line);border:2px solid var(--line);border-radius:6px}
+.c{position:relative;width:var(--cs);height:var(--cs);display:flex;align-items:center;justify-content:center;font-size:calc(var(--cs)*.55);font-weight:700;font-variant-numeric:tabular-nums}
+.c.k{background:var(--dark);color:var(--darkink)}
+.c.k.clue{background:linear-gradient(to top right,var(--dark) 0 47%,var(--line) 47% 53%,var(--dark) 53% 100%)}
+.c.k span{position:absolute;font-size:calc(var(--cs)*.27);font-weight:800;line-height:1}
+.c.k .ac{right:calc(var(--cs)*.07);top:calc(var(--cs)*.09)}
+.c.k .dn{left:calc(var(--cs)*.07);bottom:calc(var(--cs)*.09)}
+.c.k .ok{color:var(--good)}.c.k .wr{color:var(--warn)}
+.c.w{background:var(--white);cursor:pointer}
+.c.w.run{background:var(--run)}
+.c.w.given{background:var(--given);color:var(--ink)}
+.c.w.sel{background:var(--sel);outline:3px solid var(--accent);outline-offset:-3px}
+.c.w.bad{color:var(--bad)}
+.c.w.hint{color:var(--accent)}
+#pad{flex:none;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;padding:6px 12px 0;max-width:460px;width:100%;margin:0 auto}
+#pad button{min-height:clamp(40px,6.5vh,52px);border-radius:12px;background:var(--soft);font-size:1.25rem;font-weight:800}
+#acts{flex:none;display:flex;gap:10px;padding:8px 12px 12px;max-width:560px;width:100%;margin:0 auto}
+.btn{flex:1;font-weight:700;border-radius:12px;padding:8px 14px;min-height:46px;background:var(--soft);font-size:1rem}
+.btn.go{background:var(--btn);color:var(--btnink)}
+.btn:disabled{opacity:.4}
+#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:5}
+@media (max-height:600px){#msg{min-height:1.4em}}
+</style>
+</head>
+<body>
+<header><div id="lv">Level 1</div><div id="rt">Retries: 0</div><div class="sp"></div><div id="prog">0/0 sums</div><button class="ib" id="sd" aria-label="Sound" aria-pressed="true">🔊</button></header>
+<div id="msg" aria-live="polite"></div>
+<main><div id="grid" role="grid" aria-label="Sum grid"></div></main>
+<div id="pad"></div>
+<div id="acts"><button class="btn" id="un">Undo</button><button class="btn" id="hn">Hint</button><button class="btn" id="rs">Retry</button><button class="btn go" id="nx" hidden>Next level</button></div>
+<canvas id="fx" aria-hidden="true"></canvas>
+<script>
+const $=id=>document.getElementById(id);
+const rnd=k=>Math.floor(Math.random()*k);
+const pick=a=>a[rnd(a.length)];
+const shuf=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
+const reduced=()=>matchMedia('(prefers-reduced-motion:reduce)').matches;
+let lvl=1,retries=0,sound=true,AC=null,N,G,SOL,VAL,GIVEN,HINTED,RUNS,RUNOF,sel=-1,hist,won,cs=40,okPrev=0;
+try{const s=+localStorage.getItem('sumgrid-level');if(s>0)lvl=s;if(localStorage.getItem('sumgrid-sound')==='off')sound=false}catch(e){}
+
+/* ---------- generation ---------- */
+function validRuns(g,maxLen){
+  const n=g.length;
+  for(let r=1;r<n;r++){let c=1;while(c<n){if(!g[r][c]){c++;continue}let e=c;while(e<n&&g[r][e])e++;if(e-c<2||e-c>maxLen)return false;c=e}}
+  for(let c=1;c<n;c++){let r=1;while(r<n){if(!g[r][c]){r++;continue}let e=r;while(e<n&&g[e][c])e++;if(e-r<2||e-r>maxLen)return false;r=e}}
+  return true;
+}
+function layout(n,maxLen,pw){
+  const M=n+1;
+  for(let attempt=0;attempt<300;attempt++){
+    const g=Array.from({length:M},(_,r)=>Array.from({length:M},(_,c)=>(r===0||c===0)?0:(Math.random()<pw?1:0)));
+    for(let pass=0;pass<80;pass++){
+      let ch=false;
+      for(let r=1;r<M;r++){let c=1;while(c<M){if(!g[r][c]){c++;continue}let e=c;while(e<M&&g[r][e])e++;const len=e-c;if(len===1){g[r][c]=0;ch=true}else if(len>maxLen){g[r][c+(len>>1)]=0;ch=true}c=e}}
+      for(let c=1;c<M;c++){let r=1;while(r<M){if(!g[r][c]){r++;continue}let e=r;while(e<M&&g[e][c])e++;const len=e-r;if(len===1){g[r][c]=0;ch=true}else if(len>maxLen){g[r+(len>>1)][c]=0;ch=true}r=e}}
+      if(!ch)break;
+    }
+    let w=0;g.forEach(row=>row.forEach(x=>w+=x));
+    if(validRuns(g,maxLen)&&w>=n*n*.55)return g;
+  }
+  return null;
+}
+function fill(g){
+  const M=g.length,cells=[],val=Array.from({length:M},()=>Array(M).fill(0));
+  for(let r=1;r<M;r++)for(let c=1;c<M;c++)if(g[r][c])cells.push([r,c]);
+  const conflict=(r,c,d)=>{
+    for(let x=c-1;x>=1&&g[r][x];x--)if(val[r][x]===d)return true;
+    for(let y=r-1;y>=1&&g[y][c];y--)if(val[y][c]===d)return true;
+    return false;
+  };
+  let steps=0;
+  function go(k){
+    if(k===cells.length)return true;
+    if(steps++>30000)return false;
+    const[r,c]=cells[k];
+    for(const d of shuf([1,2,3,4,5,6,7,8,9]))if(!conflict(r,c,d)){val[r][c]=d;if(go(k+1))return true}
+    val[r][c]=0;return false;
+  }
+  return go(0)?val:null;
+}
+function gen(){
+  const n=Math.min(8,4+((lvl-1)>>1)),maxLen=Math.min(6,3+((lvl-1)>>1)),pw=.86,gf=Math.max(0,.45-.04*(lvl-1));
+  for(let attempt=0;attempt<60;attempt++){
+    const g=layout(n,maxLen,pw);if(!g)continue;
+    const sol=fill(g);if(!sol)continue;
+    N=n+1;G=g;SOL=sol;
+    RUNS=[];RUNOF=Array.from({length:N},()=>Array.from({length:N},()=>({a:-1,d:-1})));
+    for(let r=1;r<N;r++){let c=1;while(c<N){if(!g[r][c]){c++;continue}let e=c;while(e<N&&g[r][e])e++;
+      const cells=[];let sum=0;for(let x=c;x<e;x++){cells.push([r,x]);sum+=sol[r][x]}
+      RUNS.push({cells,sum,dir:'a',clue:[r,c-1]});cells.forEach(([y,x])=>RUNOF[y][x].a=RUNS.length-1);c=e}}
+    for(let c=1;c<N;c++){let r=1;while(r<N){if(!g[r][c]){r++;continue}let e=r;while(e<N&&g[e][c])e++;
+      const cells=[];let sum=0;for(let y=r;y<e;y++){cells.push([y,c]);sum+=sol[y][c]}
+      RUNS.push({cells,sum,dir:'d',clue:[r-1,c]});cells.forEach(([y,x])=>RUNOF[y][x].d=RUNS.length-1);r=e}}
+    VAL=Array.from({length:N},()=>Array(N).fill(0));GIVEN=Array.from({length:N},()=>Array(N).fill(false));HINTED=Array.from({length:N},()=>Array(N).fill(false));
+    const whites=[];for(let r=1;r<N;r++)for(let c=1;c<N;c++)if(g[r][c])whites.push([r,c]);
+    shuf(whites).slice(0,Math.round(whites.length*gf)).forEach(([r,c])=>{GIVEN[r][c]=true;VAL[r][c]=sol[r][c]});
+    return;
+  }
+}
+function combos(sum,len){
+  const out=[];
+  (function go(start,left,rest,cur){
+    if(!left){if(!rest)out.push(cur.join('+'));return}
+    for(let d=start;d<=9&&d<=rest;d++){cur.push(d);go(d+1,left-1,rest-d,cur);cur.pop()}
+  })(1,len,sum,[]);
+  return out;
+}
+
+/* ---------- sound ---------- */
+function ensureAC(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume()}catch(e){}}
+addEventListener('pointerup',ensureAC);
+function chime(){
+  if(!sound)return;ensureAC();if(!AC)return;
+  try{
+    const t=AC.currentTime,o=AC.createOscillator(),g=AC.createGain();
+    o.type='sine';o.frequency.setValueAtTime(880,t);o.frequency.setValueAtTime(1320,t+.07);
+    g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(.25,t+.01);g.gain.exponentialRampToValueAtTime(.0001,t+.22);
+    o.connect(g);g.connect(AC.destination);o.start(t);o.stop(t+.24);
+  }catch(e){}
+}
+
+/* ---------- game ---------- */
+const say=t=>$('msg').textContent=t;
+function runState(run){
+  const vs=run.cells.map(([r,c])=>VAL[r][c]);
+  if(vs.some(v=>!v))return 'open';
+  if(new Set(vs).size!==vs.length)return 'bad';
+  return vs.reduce((a,b)=>a+b,0)===run.sum?'ok':'wrong';
+}
+function dupCell(r,c){
+  const v=VAL[r][c];if(!v)return false;
+  for(const k of [RUNOF[r][c].a,RUNOF[r][c].d])for(const [y,x] of RUNS[k].cells)if((y!==r||x!==c)&&VAL[y][x]===v)return true;
+  return false;
+}
+function render(){
+  const g=$('grid');g.style.gridTemplateColumns=`repeat(${N},var(--cs))`;
+  const sr=sel>=0?Math.floor(sel/N):-1,sc=sel>=0?sel%N:-1;
+  const inRun=new Set();
+  if(sel>=0)for(const k of [RUNOF[sr][sc].a,RUNOF[sr][sc].d])RUNS[k].cells.forEach(([y,x])=>inRun.add(y*N+x));
+  const st=RUNS.map(runState);
+  let html='';
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    const i=r*N+c;
+    if(!G[r][c]){
+      let inner='',cls='c k';
+      const ra=RUNS.findIndex(x=>x.dir==='a'&&x.clue[0]===r&&x.clue[1]===c),rd=RUNS.findIndex(x=>x.dir==='d'&&x.clue[0]===r&&x.clue[1]===c);
+      if(ra>=0||rd>=0){cls+=' clue';
+        if(rd>=0)inner+=`<span class="dn ${st[rd]==='ok'?'ok':st[rd]==='wrong'?'wr':''}">${RUNS[rd].sum}</span>`;
+        if(ra>=0)inner+=`<span class="ac ${st[ra]==='ok'?'ok':st[ra]==='wrong'?'wr':''}">${RUNS[ra].sum}</span>`}
+      html+=`<div class="${cls}">${inner}</div>`;
+    }else{
+      const v=VAL[r][c];
+      html+=`<div class="c w${GIVEN[r][c]?' given':''}${i===sel?' sel':inRun.has(i)?' run':''}${dupCell(r,c)?' bad':''}${HINTED[r][c]?' hint':''}" data-i="${i}" role="gridcell" aria-label="Row ${r} column ${c}${v?', '+v:', empty'}">${v||''}</div>`;
+    }
+  }
+  g.innerHTML=html;
+  const okN=st.filter(s=>s==='ok').length;
+  $('prog').textContent=`${okN}/${RUNS.length} sums`;
+  if(okN>okPrev&&!won)chime();
+  okPrev=okN;
+  $('un').disabled=!hist.length||won;
+  if(okN===RUNS.length&&!won)win();
+}
+function size(){
+  const m=document.querySelector('main'),W=m.clientWidth-16,H=m.clientHeight-8;
+  cs=Math.max(26,Math.min(96,Math.floor(Math.min(W/N,H/N))-2));
+  document.documentElement.style.setProperty('--cs',cs+'px');
+}
+function showHelp(){
+  if(sel<0){say('Tap a white square, then a number.');return}
+  const r=Math.floor(sel/N),c=sel%N,parts=[];
+  const a=RUNS[RUNOF[r][c].a],d=RUNS[RUNOF[r][c].d];
+  [[a,'Across'],[d,'Down']].forEach(([run,name])=>{
+    const cb=combos(run.sum,run.cells.length);
+    parts.push(`${name} ${run.sum} in ${run.cells.length}: `+(cb.length<=6?cb.join(', '):cb.length+' ways'));
+  });
+  say(parts.join('  ·  '));
+}
+function begin(){
+  stopFx();gen();hist=[];sel=-1;won=false;okPrev=99;
+  $('lv').textContent='Level '+lvl;$('rt').textContent='Retries: '+retries;
+  $('nx').hidden=true;['un','hn','rs'].forEach(id=>$(id).hidden=false);
+  say('Fill the white squares so each run adds up to its clue. No repeats in a run.');
+  okPrev=99;size();render();
+}
+function setVal(v){
+  if(won||sel<0)return;
+  const r=Math.floor(sel/N),c=sel%N;
+  if(GIVEN[r][c]||HINTED[r][c]||VAL[r][c]===v)return;
+  hist.push({VAL:VAL.map(x=>x.slice())});if(hist.length>200)hist.shift();
+  VAL[r][c]=v;render();
+}
+function win(){
+  won=true;say('Grid complete!'+(retries?` (${retries} ${retries===1?'retry':'retries'})`:''));
+  $('nx').hidden=false;['un','hn','rs'].forEach(id=>$(id).hidden=true);
+  try{localStorage.setItem('sumgrid-level',lvl+1)}catch(e){}
+  fireworks();
+}
+$('grid').addEventListener('click',e=>{
+  const el=e.target.closest('[data-i]');if(!el||won)return;
+  sel=+el.dataset.i;render();showHelp();
+});
+$('pad').innerHTML=[1,2,3,4,5,6,7,8,9].map(d=>`<button data-d="${d}" aria-label="${d}">${d}</button>`).join('')+'<button data-d="0" aria-label="Erase">⌫</button>';
+$('pad').addEventListener('click',e=>{const b=e.target.closest('[data-d]');if(b)setVal(+b.dataset.d)});
+addEventListener('keydown',e=>{
+  if(e.key>='1'&&e.key<='9'){setVal(+e.key)}
+  else if(e.key==='Backspace'||e.key==='Delete'||e.key==='0'){setVal(0)}
+  else if(e.key.startsWith('Arrow')&&sel>=0){
+    e.preventDefault();const dr={ArrowUp:-1,ArrowDown:1}[e.key]||0,dc={ArrowLeft:-1,ArrowRight:1}[e.key]||0;
+    let r=Math.floor(sel/N)+dr,c=sel%N+dc;
+    while(r>=1&&r<N&&c>=1&&c<N&&!G[r][c]){r+=dr;c+=dc}
+    if(r>=1&&r<N&&c>=1&&c<N){sel=r*N+c;render();showHelp()}
+  }
+});
+$('un').onclick=()=>{if(won||!hist.length)return;VAL=hist.pop().VAL;render()};
+$('hn').onclick=()=>{
+  if(won)return;
+  let r,c;
+  if(sel>=0&&!GIVEN[Math.floor(sel/N)][sel%N]&&!HINTED[Math.floor(sel/N)][sel%N]){r=Math.floor(sel/N);c=sel%N}
+  else{
+    const cand=[];for(let y=1;y<N;y++)for(let x=1;x<N;x++)if(G[y][x]&&!GIVEN[y][x]&&!HINTED[y][x]&&VAL[y][x]!==SOL[y][x])cand.push([y,x]);
+    if(!cand.length){say('Everything left is already right. Check the sums.');return}
+    [r,c]=pick(cand);sel=r*N+c;
+  }
+  hist.push({VAL:VAL.map(x=>x.slice())});
+  VAL[r][c]=SOL[r][c];HINTED[r][c]=true;say('That square is filled in for you.');render();
+};
+$('rs').onclick=()=>{
+  if(won)return;
+  let changed=false;
+  for(let y=1;y<N;y++)for(let x=1;x<N;x++)if(G[y][x]&&!GIVEN[y][x]){if(VAL[y][x]||HINTED[y][x])changed=true;VAL[y][x]=0;HINTED[y][x]=false}
+  if(changed)retries++;hist=[];sel=-1;okPrev=99;$('rt').textContent='Retries: '+retries;say('Fresh start.');render();
+};
+$('nx').onclick=()=>{lvl++;retries=0;begin()};
+$('sd').onclick=()=>{sound=!sound;try{localStorage.setItem('sumgrid-sound',sound?'on':'off')}catch(e){}$('sd').textContent=sound?'🔊':'🔇';$('sd').setAttribute('aria-pressed',sound);if(sound)chime()};
+addEventListener('resize',size);
+
+const FXC=['#e4572e','#f2a900','#3fa34d','#1f8fd1','#7a52c7','#e0559a','#14b5a5'];
+let fxRaf=0,parts=[];
+function stopFx(){cancelAnimationFrame(fxRaf);fxRaf=0;parts=[];const c=$('fx');c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function burst(cx,cy){for(let i=0;i<60;i++){const a=Math.random()*6.283,v=2+Math.random()*5;
+  parts.push({x:cx,y:cy,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:1,c:FXC[rnd(FXC.length)]})}}
+function fireworks(){
+  if(reduced())return;
+  const c=$('fx'),x=c.getContext('2d'),dpr=window.devicePixelRatio||1,Wd=innerWidth,H=innerHeight;
+  c.width=Wd*dpr;c.height=H*dpr;x.scale(dpr,dpr);
+  let t=0,next=0;
+  (function frame(){
+    x.clearRect(0,0,Wd,H);
+    if(t<150&&t>=next){burst(Wd*(.15+Math.random()*.7),H*(.15+Math.random()*.4));next=t+18+rnd(14)}
+    parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.06;p.vx*=.985;p.l-=.011;x.globalAlpha=Math.max(p.l,0);x.fillStyle=p.c;x.beginPath();x.arc(p.x,p.y,2.6,0,6.283);x.fill()});
+    parts=parts.filter(p=>p.l>0);t++;
+    if(t<150||parts.length)fxRaf=requestAnimationFrame(frame);else x.clearRect(0,0,Wd,H);
+  })();
+}
+$('sd').textContent=sound?'🔊':'🔇';$('sd').setAttribute('aria-pressed',sound);
+begin();
+</script>
+</body>
+</html>
